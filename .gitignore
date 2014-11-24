@@ -1,0 +1,4 @@
+*.swp
+*.rlib
+**/Cargo.lock
+**/target

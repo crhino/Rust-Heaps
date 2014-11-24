@@ -1,0 +1,13 @@
+[package]
+
+name = "Rust Heaps"
+version = "0.0.1"
+authors = [ "piraino.chris@gmail.com" ]
+
+[lib]
+
+name = "fibonacci_heap"
+
+path = "src/lib.rs"
+
+test = true
