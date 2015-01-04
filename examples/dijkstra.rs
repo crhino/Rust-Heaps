@@ -7,83 +7,86 @@
  * Using Fibonacci heaps.
  */
 
-extern crate core;
-extern crate fibonacci_heap;
-extern crate collections;
-use fibonacci_heap::FibHeap;
-use core::fmt;
+// extern crate core;
+extern crate rust_heaps;
+use rust_heaps::fibonacci_heap::FibHeap;
+use rust_heaps::{Heap};
+use std::fmt;
 use std::uint;
 use std::rc::Rc;
-use std::cell::{RefCell, Cell};
-use collections::hash::Hash;
-use collections::hash::sip::SipState;
+use std::cell::{RefCell};
+use std::hash::Hash;
+use std::hash::sip::SipState;
 
-static INFINITY: uint = uint::MAX;
+static INFINITY: u64 = uint::MAX as u64;
 
+#[deriving(Clone, Show)]
 struct Node {
-    id: uint,
-    edges: RefCell<Vec<Edge>>, // A node only holds edges were it is the source.
-    previous: RefCell<Option<Rc<Node>>>,
-    distance: Cell<uint>,
-    visited: Cell<bool>
+    id: u64,
+    edges: Vec<Edge>, // A node only holds edges were it is the source.
+    previous: Option<Rc<RefCell<Node>>>,
+    distance: u64,
+    visited: bool,
 }
 
-impl fmt::Show for Node {
+impl fmt::Show for RefCell<Node> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "\nNode "))
-        try!(write!(f, "id: {} ", self.id));
-        write!(f, "distance: {}", self.distance.get())
+        try!(write!(f, "Node ( "));
+        try!(write!(f, "id: {}, ", self.borrow().id));
+        write!(f, "distance: {} )", self.borrow().distance)
     }
 }
 
-impl Hash for Node {
+impl Hash for RefCell<Node> {
     fn hash(&self, state: &mut SipState) {
-        self.id.hash(state);
+        self.borrow().id.hash(state);
     }
 }
-impl Eq for Node {}
+impl Eq for RefCell<Node> {}
 
-impl PartialEq for Node {
-    fn eq(&self, other: &Node) -> bool {
-        self.id == other.id
-    }
-}
-
-impl PartialOrd for Node {
-    fn partial_cmp(&self, other: &Node) -> Option<Ordering> {
-        self.id.partial_cmp(&other.id)
+impl PartialEq for RefCell<Node> {
+    fn eq(&self, other: &RefCell<Node>) -> bool {
+        self.borrow().id == other.borrow().id
     }
 }
 
-#[deriving(Show)]
+impl PartialOrd for RefCell<Node> {
+    fn partial_cmp(&self, other: &RefCell<Node>) -> Option<Ordering> {
+        self.borrow().id.partial_cmp(&other.borrow().id)
+    }
+}
+
+#[deriving(Show, Clone)]
 struct Edge {
-    source: Rc<Node>,
-    target: Rc<Node>,
-    cost: uint
+    source: Rc<RefCell<Node>>,
+    target: Rc<RefCell<Node>>,
+    cost: u64
 }
 
-fn shortest_path(graph: Vec<Rc<Node>>, start: &Rc<Node>, stop: &Rc<Node>) -> Vec<Rc<Node>> {
-    let mut pq = FibHeap::new();
-    start.distance.set(0);
+fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
+                 graph: Vec<Rc<RefCell<Node>>>,
+                 start: Rc<RefCell<Node>>,
+                 stop: Rc<RefCell<Node>>) -> Vec<Rc<RefCell<Node>>> {
+    start.borrow_mut().distance = 0;
     for n in graph.into_iter() {
-        pq.insert(n.distance.get(), n);
+        pq.insert(n.borrow().distance, n);
     }
 
     while !pq.empty() {
         let (distance, node) = pq.delete_min();
-        if node.id == stop.id {
+        if node.borrow().id == stop.borrow().id {
             break;
         }
-        node.visited.set(true);
-        for e in node.edges.borrow().iter() {
-            if !e.target.visited.get() {
+        node.borrow_mut().visited = true;
+        for e in node.borrow().edges.iter() {
+            if !e.target.borrow().visited {
                let new_dist = distance + e.cost;
-                if new_dist < e.target.distance.get() {
-                    let old_dist = e.target.distance.get();
+                if new_dist < e.target.borrow().distance {
+                    let old_dist = e.target.borrow().distance;
                     {
-                        e.target.distance.set(new_dist);
-                        let mut prev = e.target.previous.borrow_mut();
-                        *prev.deref_mut() = Some(node.clone());
+                        e.target.borrow_mut().distance = new_dist;
+                        let mut target = e.target.borrow_mut();
+                        target.previous = Some(node.clone());
                     }
                     pq.decrease_key(e.target.clone(), old_dist - new_dist);
                 }
@@ -96,70 +99,70 @@ fn shortest_path(graph: Vec<Rc<Node>>, start: &Rc<Node>, stop: &Rc<Node>) -> Vec
     path
 }
 
-fn construct_path(path: &mut Vec<Rc<Node>>, node: &Rc<Node>) {
-    if node.distance.get() == 0 {
+fn construct_path(path: &mut Vec<Rc<RefCell<Node>>>, node: Rc<RefCell<Node>>) {
+    if node.borrow().distance == 0 {
         path.push(node.clone());
         return
     }
-    construct_path(path, &node.previous.borrow().clone().unwrap());
+    construct_path(path, node.borrow().previous.clone().unwrap());
     path.push(node.clone());
 }
 
 fn main() {
-    let n1 = Rc::new(Node {
+    let n1 = Rc::new(RefCell::new(Node {
         id: 1,
-        edges: RefCell::new(Vec::new()),
-        previous: RefCell::new(None),
-        distance: Cell::new(INFINITY),
-        visited: Cell::new(false)
-    });
-    let n2 = Rc::new(Node {
+        edges: Vec::new(),
+        previous: None,
+        distance: INFINITY,
+        visited: false
+    }));
+    let n2 = Rc::new(RefCell::new(Node {
         id: 2,
-        edges: RefCell::new(Vec::new()),
-        previous: RefCell::new(None),
-        distance: Cell::new(INFINITY),
-        visited: Cell::new(false)
-    });
-    let n3 = Rc::new(Node {
+        edges: Vec::new(),
+        previous: None,
+        distance: INFINITY,
+        visited: false
+    }));
+    let n3 = Rc::new(RefCell::new(Node {
         id: 3,
-        edges: RefCell::new(Vec::new()),
-        previous: RefCell::new(None),
-        distance: Cell::new(INFINITY),
-        visited: Cell::new(false)
-    });
-    let n4 = Rc::new(Node {
+        edges: Vec::new(),
+        previous: None,
+        distance: INFINITY,
+        visited: false
+    }));
+    let n4 = Rc::new(RefCell::new(Node {
         id: 4,
-        edges: RefCell::new(Vec::new()),
-        previous: RefCell::new(None),
-        distance: Cell::new(INFINITY),
-        visited: Cell::new(false)
-    });
-    n1.edges.borrow_mut().push(Edge {
+        edges: Vec::new(),
+        previous: None,
+        distance: INFINITY,
+        visited: false
+    }));
+    n1.borrow_mut().edges.push(Edge {
         source: n1.clone(),
         target: n2.clone(),
         cost: 1
     });
-    n1.edges.borrow_mut().push(Edge {
+    n1.borrow_mut().edges.push(Edge {
         source: n1.clone(),
         target: n3.clone(),
         cost: 5
     });
-    n2.edges.borrow_mut().push(Edge {
+    n2.borrow_mut().edges.push(Edge {
         source: n2.clone(),
         target: n3.clone(),
         cost: 3
     });
-    n2.edges.borrow_mut().push(Edge {
+    n2.borrow_mut().edges.push(Edge {
         source: n2.clone(),
         target: n4.clone(),
         cost: 8
     });
-    n3.edges.borrow_mut().push(Edge {
+    n3.borrow_mut().edges.push(Edge {
         source: n3.clone(),
         target: n4.clone(),
         cost: 2
     });
-    n4.edges.borrow_mut().push(Edge {
+    n4.borrow_mut().edges.push(Edge {
         source: n4.clone(),
         target: n2.clone(),
         cost: 9
@@ -167,6 +170,7 @@ fn main() {
     let n1c = n1.clone();
     let n4c = n4.clone();
     let graph = vec!(n1, n2, n3, n4);
-    let shortest = shortest_path(graph, &n1c, &n4c);
+    let mut heap = FibHeap::new();
+    let shortest = shortest_path(&mut heap, graph, n1c, n4c);
     println!("Path: {}", shortest);
 }
