@@ -1,6 +1,9 @@
 #![crate_name = "rust_heaps"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+#[cfg(test)]
+extern crate test;
+
 mod fib_node;
 pub mod fibonacci_heap;
 

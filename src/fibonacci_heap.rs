@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use fib_node::{FibEntryType, FibEntry};
 use {Heap, HeapExt, HeapDelete};
 
+#[deriving(Clone)]
 pub struct FibHeap<K,V> {
     // A hash table for O(1) access to entries. The value is the key.
     hash_table: HashMap<V, FibEntryType<K,V>>,
@@ -214,7 +215,8 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use test::Bencher;
     use {Heap, HeapExt, HeapDelete};
     use fibonacci_heap::{FibHeap};
     use fib_node::{FibEntry};
@@ -346,5 +348,95 @@ mod test {
         fheap.delete(1);
         assert_eq!(fheap.roots.len(), 1);
         assert_eq!(fheap.find_min(), (4, 4))
+    }
+
+    #[bench]
+    fn bench_new(b: &mut Bencher) {
+        b.iter(|| {
+            let fheap: FibHeap<u8, u8> = FibHeap::new();
+            assert_eq!(fheap.roots.len(), 0);
+            assert_eq!(fheap.hash_table.len(), 0);
+            assert!(fheap.empty());
+        });
+    }
+
+    #[bench]
+    fn bench_insert(b: &mut Bencher) {
+        let mut fheap: FibHeap<u8, u8> = FibHeap::new();
+        let mut n = 0;
+        b.iter(|| {
+            fheap.insert(n,n);
+            n += 1;
+        });
+    }
+
+    #[bench]
+    fn bench_merge(b: &mut Bencher) {
+        let mut fheap: FibHeap<u8, u8> = FibHeap::new();
+        fheap.insert(1, 1);
+        fheap.insert(4, 4);
+        fheap.insert(0, 0);
+        fheap.insert(5, 5);
+        fheap.insert(2, 2);
+        fheap.insert(6, 6);
+        fheap.insert(3, 3);
+        fheap.insert(11, 11);
+        let fheap1: FibHeap<u8, u8> = FibHeap::new();
+        fheap.insert(7, 7);
+        fheap.insert(10, 10);
+
+        b.iter(|| {
+            fheap.merge(fheap1.clone());
+        });
+    }
+
+    #[bench]
+    fn bench_delete_min(b: &mut Bencher) {
+        let mut fheap: FibHeap<u8, u8> = FibHeap::new();
+        fheap.insert(1, 1);
+        fheap.insert(4, 4);
+        fheap.insert(0, 0);
+        fheap.insert(5, 5);
+        fheap.insert(2, 2);
+        fheap.insert(6, 6);
+        fheap.insert(3, 3);
+        fheap.insert(12, 12);
+        fheap.insert(11, 11);
+        fheap.insert(13, 13);
+        fheap.insert(14, 14);
+        fheap.insert(15, 15);
+        fheap.insert(16, 16);
+        fheap.insert(17, 17);
+
+        b.iter(|| {
+            fheap.delete_min();
+            fheap.insert(0, 0);
+        });
+    }
+
+    #[bench]
+    fn bench_decrease_key(b: &mut Bencher) {
+        let mut fheap: FibHeap<u8, u8> = FibHeap::new();
+        fheap.insert(1, 1);
+        fheap.insert(4, 4);
+        fheap.insert(0, 0);
+        fheap.insert(5, 5);
+        fheap.insert(2, 2);
+        fheap.insert(6, 6);
+        fheap.insert(3, 3);
+        fheap.insert(10, 10);
+        fheap.insert(11, 11);
+        fheap.insert(13, 13);
+        fheap.insert(14, 14);
+        fheap.insert(15, 15);
+        fheap.insert(16, 16);
+        fheap.insert(17, 17);
+        let fheap1: FibHeap<u8, u8> = FibHeap::new();
+        fheap.insert(10, 10);
+
+        b.iter(|| {
+            fheap.decrease_key(10, 9);
+            fheap.merge(fheap1.clone());
+        });
     }
 }
