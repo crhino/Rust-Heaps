@@ -34,7 +34,7 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for F
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for FibNode<K, V> {}
 
 #[derive(Clone, Debug)]
-struct _FibNode<K,V> {
+pub struct _FibNode<K,V> {
     parent: Option<FibNode<K, V>>,
     children: VecDeque<FibNode<K, V>>,
     // Rank is the length of children
