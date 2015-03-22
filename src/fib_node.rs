@@ -1,10 +1,6 @@
-use std::fmt;
 use std::fmt::{Debug};
 use std::cmp::Ordering;
-use std::rc::{try_unwrap, Rc};
-use std::cell::RefCell;
 use std::mem;
-use std::iter::{IteratorExt};
 use std::collections::VecDeque;
 use std::collections::vec_deque::Drain;
 
@@ -164,7 +160,7 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> _FibNode<K,V> {
     // XXX: Better way to do this?
     pub fn remove_child(&mut self, child: FibNode<K,V>)
         -> Result<FibNode<K,V>, String> {
-            for _ in range(0, self.children.len()) {
+            for _ in (0..self.children.len()) {
                 if *self.children.front().unwrap() == child {
                     return Ok(self.children.pop_front().unwrap())
                 }
@@ -224,7 +220,7 @@ mod test {
     #[test]
     fn node_test() {
         let mut node = FibNode::new(0u8, 0u8);
-        let mut child = FibNode::new(1u8, 1u8);
+        let child = FibNode::new(1u8, 1u8);
 
         assert_eq!(node.get_key(), &0u8);
         assert_eq!(node.get_value(), &0u8);
@@ -240,7 +236,7 @@ mod test {
     #[test]
     fn parent_child_test() {
         let mut node = FibNode::new(1u8, 1u8);
-        let mut root = node.clone();
+        let root = node.clone();
         let mut child = FibNode::new(2u8, 2u8);
         child.set_parent(Some(root.clone()));
 
@@ -256,12 +252,12 @@ mod test {
 
     #[test]
     fn remove_child_test() {
-        let mut node = FibNode::new(0u8, 0u8);
-        let mut child1 = FibNode::new(1u8, 1u8);
-        let mut child2 = FibNode::new(2u8, 2u8);
-        let mut child3 = FibNode::new(3u8, 3u8);
-        let mut child4 = FibNode::new(4u8, 4u8);
-        let mut child5 = FibNode::new(5u8, 5u8);
+        let node = FibNode::new(0u8, 0u8);
+        let child1 = FibNode::new(1u8, 1u8);
+        let child2 = FibNode::new(2u8, 2u8);
+        let child3 = FibNode::new(3u8, 3u8);
+        let child4 = FibNode::new(4u8, 4u8);
+        let child5 = FibNode::new(5u8, 5u8);
 
         node.add_child(child1.clone());
         node.add_child(child2.clone());

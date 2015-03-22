@@ -12,7 +12,6 @@ extern crate rust_heaps;
 use rust_heaps::fibonacci_heap::FibHeap;
 use rust_heaps::{Heap};
 use std::usize;
-use std::fmt;
 use std::rc::Rc;
 use std::cmp::Ordering;
 use std::cell::{RefCell};

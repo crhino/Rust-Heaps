@@ -3,7 +3,6 @@ use std::num::Float;
 use std::fmt::Debug;
 use std::collections::VecDeque;
 use std::hash::Hash;
-use std::collections::HashMap;
 use fib_node::{FibNode};
 use {Heap, HeapExt, HeapDelete};
 
@@ -53,7 +52,7 @@ for FibHeap<K, V> {
         }
     }
 
-    fn decrease_key(&mut self, mut node: &FibNode<K, V>, delta: K) {
+    fn decrease_key(&mut self, node: &FibNode<K, V>, delta: K) {
         // TODO: Figure out how to do this better.
         let mut new_node = FibNode::from_mut_ptr(node.get_mut_ptr());
         let key = new_node.get_key().clone();
@@ -226,7 +225,6 @@ mod tests {
     use test::Bencher;
     use {Heap, HeapExt, HeapDelete};
     use fibonacci_heap::{FibHeap};
-    use fib_node::{FibNode};
 
     #[test]
     fn fheap_insert() {
@@ -443,7 +441,6 @@ mod tests {
         fheap.insert(15, 15);
         fheap.insert(16, 16);
         fheap.insert(17, 17);
-        let fheap1: FibHeap<u8, u8> = FibHeap::new();
         fheap.insert(10, 10);
 
         b.iter(|| {
