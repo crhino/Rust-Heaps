@@ -1,159 +1,214 @@
 use std::fmt;
-use std::fmt::{Show};
+use std::fmt::{Debug};
+use std::cmp::Ordering;
 use std::rc::{try_unwrap, Rc};
 use std::cell::RefCell;
-use std::collections::DList;
-use std::collections::dlist::IntoIter;
+use std::mem;
+use std::iter::{IteratorExt};
+use std::collections::VecDeque;
+use std::collections::vec_deque::Drain;
 
-pub type FibEntryType<K,V> = Rc<RefCell<FibNode<K,V>>>;
-
-pub trait FibEntry<K, V> {
-    fn new(key: K, value: V) -> FibEntryType<K,V>;
-    fn rank(&self) -> uint;
-    fn add_child(&self, child: FibEntryType<K, V>);
-    fn remove_child(&self, child: FibEntryType<K, V>)
-    -> Result<FibEntryType<K,V>, String>;
-    fn set_marked(&self, mark: bool);
-    fn get_marked(&self) -> bool;
-    fn set_key(&self, key: K);
-    fn set_parent(&self, parent: Option<FibEntryType<K,V>>);
-    fn get_parent(&self) -> Option<FibEntryType<K,V>>;
-    fn root(&self) -> bool;
-    fn children_into_iter(&mut self) -> IntoIter<FibEntryType<K, V>>;
-    fn into_inner(self) -> (K, V);
+#[derive(Clone, Debug)]
+pub struct FibNode<K, V> {
+    inner: *mut _FibNode<K, V>,
 }
 
-#[deriving(Clone)]
-struct FibNode<K,V> {
-    parent: Option<FibEntryType<K,V>>,
-    children: DList<FibEntryType<K, V>>,
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for FibNode<K, V> {
+    fn cmp(&self, other: &FibNode<K, V>) -> Ordering {
+        unsafe { (*(self.inner)).cmp(&*other.inner) }
+    }
+}
+
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialOrd for FibNode<K, V> {
+    fn partial_cmp(&self, other: &FibNode<K, V>) -> Option<Ordering> {
+        unsafe { (*(self.inner)).partial_cmp(&*other.inner) }
+    }
+}
+
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for FibNode<K, V> {
+    fn eq(&self, other: &FibNode<K, V>) -> bool {
+        unsafe { (*(self.inner)).eq(&*other.inner) }
+    }
+}
+
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for FibNode<K, V> {}
+
+#[derive(Clone, Debug)]
+struct _FibNode<K,V> {
+    parent: Option<FibNode<K, V>>,
+    children: VecDeque<FibNode<K, V>>,
     // Rank is the length of children
     marked: bool,
     key: K,
-    value: V
+    value: V,
 }
 
-impl<K: Show, V: Show> Show for FibNode<K, V> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "FibNode ( "));
-        if self.parent.is_none() {
-            try!(write!(f, "parent: ( None ), "));
-        } else {
-            try!(write!(f, "parent ( key: {}, value: {} ), ",
-                        self.parent.clone().unwrap().borrow().get_key(),
-                        self.parent.clone().unwrap().borrow().value()));
-        }
-        try!(write!(f, "children: {}, ", self.children));
-        try!(write!(f, "marked: {}, ", self.marked));
-        try!(write!(f, "key: {}, ", self.key));
-        write!(f, "value: {} )", self.value)
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for _FibNode<K, V> {
+    fn cmp(&self, other: &_FibNode<K, V>) -> Ordering {
+        self.key.cmp(&other.key)
     }
 }
 
-impl<K: Show, V: Show> Show for FibEntryType<K, V> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.borrow())
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialOrd for _FibNode<K, V> {
+    fn partial_cmp(&self, other: &_FibNode<K, V>) -> Option<Ordering> {
+        self.key.partial_cmp(&other.key)
     }
 }
 
-impl<K: Ord, V: PartialOrd> PartialOrd for FibEntryType<K, V> {
-    fn partial_cmp(&self, other: &FibEntryType<K, V>) -> Option<Ordering> {
-        self.borrow().get_key().partial_cmp(other.borrow().get_key())
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for _FibNode<K, V> {
+    fn eq(&self, other: &_FibNode<K, V>) -> bool {
+        self.key.eq(&other.key)
     }
 }
 
-impl<K: Ord, V: PartialOrd> PartialEq for FibEntryType<K, V> {
-    fn eq(&self, other: &FibEntryType<K, V>) -> bool {
-        self.borrow().value().eq(other.borrow().value())
-    }
-}
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for _FibNode<K, V> {}
 
-impl<K: Ord, V: PartialOrd> Eq for FibEntryType<K, V> {}
-
-impl<K: Ord, V: PartialOrd> Ord for FibEntryType<K, V> {
-    fn cmp(&self, other: &FibEntryType<K, V>) -> Ordering {
-        self.borrow().get_key().cmp(other.borrow().get_key())
-    }
-}
-
-impl<K: Ord + Show, V: PartialOrd + Show> FibEntry<K,V> for FibEntryType<K,V> {
-    fn new(key: K, value: V) -> FibEntryType<K,V> {
-        Rc::new(RefCell::new(FibNode {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> FibNode<K,V> {
+    pub fn new(key: K, value: V) -> FibNode<K,V> {
+        let node = _FibNode {
             parent: None,
-            children: DList::new(),
+            children: VecDeque::new(),
             marked: false,
             key: key,
             value: value,
-        }))
+        };
+        let inner = unsafe { mem::transmute(Box::new(node)) };
+        FibNode { inner: inner }
     }
 
-    fn rank(&self) -> uint {
-        self.borrow().children.len()
+    pub fn from_mut_ptr(ptr: *mut _FibNode<K, V>) -> FibNode<K, V> {
+        FibNode { inner: ptr }
     }
 
-    fn add_child(&self, child: FibEntryType<K, V>) {
-        self.borrow_mut().children.insert_ordered(child);
+    pub fn get_mut_ptr(&self) -> *mut _FibNode<K, V> {
+        self.inner.clone()
     }
 
-    // XXX: Better way to do this?
-    fn remove_child(&self, child: FibEntryType<K, V>)
-        -> Result<FibEntryType<K,V>, String> {
-            let mut borrow = self.borrow_mut();
-            let children = &mut borrow.children;
+    pub fn rank(&self) -> usize {
+        unsafe { (*self.inner).rank() }
+    }
 
-            for _ in range(0, children.len()) {
-                if *children.front().unwrap() == child {
-                    return Ok(children.pop_front().unwrap())
-                }
-                children.rotate_backward();
-            }
-            Err(format!("Child {} was not found in children", child))
+    pub fn add_child(&self, child: FibNode<K,V>) {
+        unsafe { (*self.inner).add_child(child) }
+    }
+
+    pub fn remove_child(&self, child: FibNode<K,V>)
+        -> Result<FibNode<K,V>, String> {
+        unsafe { (*self.inner).remove_child(child) }
         }
 
-    fn set_marked(&self, mark: bool) {
-        self.borrow_mut().marked = mark;
+    pub fn set_marked(&mut self, mark: bool) {
+        unsafe { (*self.inner).set_marked(mark) }
     }
 
-    fn get_marked(&self) -> bool {
-        self.borrow().marked
+    pub fn get_marked(&self) -> bool {
+        unsafe { (*self.inner).get_marked() }
     }
 
-    fn set_key(&self, key: K) {
-        self.borrow_mut().key = key;
+    pub fn set_key(&mut self, key: K) {
+        unsafe { (*self.inner).set_key(key) }
     }
 
-    fn set_parent(&self, parent: Option<FibEntryType<K,V>>) {
-        self.borrow_mut().parent = parent;
+    pub fn set_parent(&mut self, parent: Option<FibNode<K,V>>) {
+        unsafe { (*self.inner).set_parent(parent) }
     }
 
-    fn get_parent(&self) -> Option<FibEntryType<K,V>>{
-        self.borrow().parent.clone()
+    pub fn get_parent(&self) -> Option<FibNode<K,V>>{
+        unsafe { (*self.inner).get_parent() }
     }
 
-    fn root(&self) -> bool {
-        self.borrow().parent.is_none()
+    pub fn root(&self) -> bool {
+        unsafe { (*self.inner).root() }
     }
 
-    fn children_into_iter(&mut self) -> IntoIter<FibEntryType<K, V>> {
-        let mut borrow = self.borrow_mut();
-        let children = borrow.children.clone();
-        borrow.children = DList::new();
-        children.into_iter()
+    pub fn children_drain(&mut self) -> Drain<FibNode<K,V>> {
+        unsafe { (*self.inner).children_drain() }
     }
 
-    fn into_inner(self) -> (K, V) {
-        match try_unwrap(self) {
-            Ok(node) => {
-                let inner = node.into_inner();
-                (inner.key, inner.value)
-            },
-            Err(rc) => panic!("{} is still shared", rc)
+    // TODO: Fix this so it actually consumes everything
+    pub fn into_inner(self) -> (K, V) {
+        unsafe {
+            let node = (*self.inner).clone();
+            node.into_inner()
         }
+    }
+
+    pub fn get_value(&self) -> &V {
+        unsafe { (*self.inner).get_value() }
+    }
+
+    pub fn get_key(&self) -> &K {
+        unsafe { (*self.inner).get_key() }
     }
 }
 
-impl<K, V> FibNode<K, V> {
-    pub fn value(&self) -> &V {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> _FibNode<K,V> {
+    pub fn new(key: K, value: V) -> _FibNode<K,V> {
+        _FibNode {
+            parent: None,
+            children: VecDeque::new(),
+            marked: false,
+            key: key,
+            value: value,
+        }
+    }
+
+    pub fn rank(&self) -> usize {
+        self.children.len()
+    }
+
+    pub fn add_child(&mut self, child: FibNode<K,V>) {
+        self.children.push_back(child);
+    }
+
+    // XXX: Better way to do this?
+    pub fn remove_child(&mut self, child: FibNode<K,V>)
+        -> Result<FibNode<K,V>, String> {
+            for _ in range(0, self.children.len()) {
+                if *self.children.front().unwrap() == child {
+                    return Ok(self.children.pop_front().unwrap())
+                }
+                let front = self.children.pop_front().unwrap();
+                self.children.push_back(front);
+            }
+            Err(String::from_str("Could not find child {:?} in children"))
+        }
+
+    pub fn set_marked(&mut self, mark: bool) {
+        self.marked = mark;
+    }
+
+    pub fn get_marked(&self) -> bool {
+        self.marked
+    }
+
+    pub fn set_key(&mut self, key: K) {
+        self.key = key;
+    }
+
+    pub fn set_parent(&mut self, parent: Option<FibNode<K,V>>) {
+        self.parent = parent;
+    }
+
+    pub fn get_parent(&self) -> Option<FibNode<K,V>>{
+        self.parent.clone()
+    }
+
+    pub fn root(&self) -> bool {
+        self.parent.is_none()
+    }
+
+    pub fn children_drain(&mut self) -> Drain<FibNode<K,V>> {
+        self.children.drain()
+    }
+
+    pub fn into_inner(self) -> (K, V) {
+        assert!(self.parent.is_none());
+        assert_eq!(self.children.len(), 0);
+        (self.key, self.value)
+    }
+
+    pub fn get_value(&self) -> &V {
         &self.value
     }
 
@@ -164,15 +219,16 @@ impl<K, V> FibNode<K, V> {
 
 #[cfg(test)]
 mod test {
-    use fib_node::{FibEntry};
+    use fib_node::{FibNode};
 
     #[test]
     fn node_test() {
-        let node = FibEntry::new(0u8, 0u8);
-        let child = FibEntry::new(1u8, 1u8);
+        let mut node = FibNode::new(0u8, 0u8);
+        let mut child = FibNode::new(1u8, 1u8);
 
-        assert_eq!(node.borrow().get_key(), &0u8);
-        assert_eq!(node.borrow().value(), &0u8);
+        assert_eq!(node.get_key(), &0u8);
+        assert_eq!(node.get_value(), &0u8);
+        assert_eq!(node.get_value(), &0u8);
         assert_eq!(node.get_marked(), false);
         node.set_marked(true);
         assert_eq!(node.get_marked(), true);
@@ -183,9 +239,9 @@ mod test {
 
     #[test]
     fn parent_child_test() {
-        let node = FibEntry::new(1u8, 1u8);
-        let root = node.clone();
-        let child = FibEntry::new(2u8, 2u8);
+        let mut node = FibNode::new(1u8, 1u8);
+        let mut root = node.clone();
+        let mut child = FibNode::new(2u8, 2u8);
         child.set_parent(Some(root.clone()));
 
         node.set_key(10u8);
@@ -193,19 +249,19 @@ mod test {
         let parent = child.get_parent().expect("Not a child");
 
         assert_eq!(root, parent);
-        assert_eq!(root.borrow().get_key(), &10u8);
+        assert_eq!(root.get_key(), &10u8);
         assert_eq!(parent.get_marked(), true);
-        assert_eq!(child.borrow().get_key(), &2u8);
+        assert_eq!(child.get_key(), &2u8);
     }
 
     #[test]
     fn remove_child_test() {
-        let node = FibEntry::new(0u8, 0u8);
-        let child1 = FibEntry::new(1u8, 1u8);
-        let child2 = FibEntry::new(2u8, 2u8);
-        let child3 = FibEntry::new(3u8, 3u8);
-        let child4 = FibEntry::new(4u8, 4u8);
-        let child5 = FibEntry::new(5u8, 5u8);
+        let mut node = FibNode::new(0u8, 0u8);
+        let mut child1 = FibNode::new(1u8, 1u8);
+        let mut child2 = FibNode::new(2u8, 2u8);
+        let mut child3 = FibNode::new(3u8, 3u8);
+        let mut child4 = FibNode::new(4u8, 4u8);
+        let mut child5 = FibNode::new(5u8, 5u8);
 
         node.add_child(child1.clone());
         node.add_child(child2.clone());

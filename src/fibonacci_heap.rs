@@ -1,44 +1,46 @@
+use std::ops::Sub;
 use std::num::Float;
-use std::fmt::Show;
-use std::collections::DList;
+use std::fmt::Debug;
+use std::collections::VecDeque;
 use std::hash::Hash;
 use std::collections::HashMap;
-use fib_node::{FibEntryType, FibEntry};
+use fib_node::{FibNode};
 use {Heap, HeapExt, HeapDelete};
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct FibHeap<K,V> {
-    // A hash table for O(1) access to entries. The value is the key.
-    hash_table: HashMap<V, FibEntryType<K,V>>,
     // The minimum element is always contained at the top of the first root.
-    roots: DList<FibEntryType<K,V>>,
-    total: int
+    roots: VecDeque<FibNode<K, V>>,
+    total: u32
 }
 
-impl<K: Ord + Show + Clone + Sub<K,K>,
-V: Eq + PartialOrd + Show + Hash + Clone> Heap<K, V>
+impl<K: Ord + Debug + Clone + Sub<K, Output=K>,
+V: Eq + PartialOrd + Debug + Clone> Heap<K, V>
 for FibHeap<K, V> {
+    type HeapEntry = FibNode<K, V>;
+
     fn find_min(&self) -> (K, V) {
         match self.roots.front() {
-            Some(n) => (n.borrow().get_key().clone(), n.borrow().value().clone()),
+            Some(min) => {
+                (min.get_key().clone(), min.get_value().clone())
+            },
             None => panic!("Fibonacci heap is empty")
         }
     }
 
-    fn insert(&mut self, k: K, v: V) {
-        let vhash = v.clone();
-        let node = FibEntry::new(k, v);
-        let hashnode = node.clone();
-        self.insert_root(node);
-        self.hash_table.insert(vhash, hashnode);
+    fn insert(&mut self, k: K, v: V) -> FibNode<K, V> {
+        let node = FibNode::new(k, v);
+        let ret = node.clone();
         self.total += 1;
+        self.insert_root(node);
+        ret
     }
 
     fn delete_min(&mut self) -> (K, V) {
         match self.roots.pop_front() {
             None => panic!("Fibonacci heap is empty"),
-            Some(mut min_node) => {
-                for c in min_node.children_into_iter() {
+            Some(mut min_entry) => {
+                for mut c in min_entry.children_drain() {
                     c.set_parent(None);
                     self.insert_root(c);
                 }
@@ -46,17 +48,18 @@ for FibHeap<K, V> {
                 self.consolidate();
 
                 self.total = self.total - 1;
-                self.hash_table.remove(min_node.borrow().value());
-                min_node.into_inner()
+                min_entry.into_inner()
             }
         }
     }
 
-    fn decrease_key(&mut self, value: V, delta: K) {
-        let node = self.hash_table[value].clone();
-        let key = node.borrow().get_key().clone();
-        node.set_key(key - delta);
-        self.decreased_node(node);
+    fn decrease_key(&mut self, mut node: &FibNode<K, V>, delta: K) {
+        // TODO: Figure out how to do this better.
+        let mut new_node = FibNode::from_mut_ptr(node.get_mut_ptr());
+        let key = new_node.get_key().clone();
+        let new_key: K = key - delta;
+        new_node.set_key(new_key);
+        self.decreased_node(new_node);
     }
 
     fn empty(&self) -> bool {
@@ -64,41 +67,48 @@ for FibHeap<K, V> {
     }
 }
 
-impl<K: Ord + Show + Clone + Sub<K,K>,
-V: Eq + PartialOrd + Show + Hash + Clone> HeapExt<K, V>
-for FibHeap<K, V> {
-    fn merge(&mut self, other: FibHeap<K,V>) {
-        self.roots.merge(other.roots, |s, o| { s < o });
+impl<K: Ord + Debug + Clone + Sub<K, Output=K>,
+V: Eq + PartialOrd + Debug + Hash + Clone> HeapExt for FibHeap<K, V> {
+    // TODO: Make this operation O(1), I don't think VecDeque offers the ability to append O(1).
+    fn merge(mut self, mut other: FibHeap<K,V>) -> FibHeap<K, V> {
+        let (smin, _) = self.find_min();
+        let (omin, _) = other.find_min();
 
-        for (k, v) in other.hash_table.into_iter() {
-            self.hash_table.insert(k, v);
+        if smin < omin {
+            self.roots.append(&mut other.roots);
+            self.total += other.total;
+            self
+        } else {
+            other.roots.append(&mut self.roots);
+            other.total += self.total;
+            other
         }
-
-        self.total += other.total;
     }
 }
 
-impl<K: Ord + Show +Clone + Sub<K,K>,
-V: Eq + PartialOrd + Show + Hash + Clone> HeapDelete<K, V>
+impl<K: Ord + Debug +Clone + Sub<K, Output=K>,
+V: Eq + PartialOrd + Debug + Hash + Clone> HeapDelete<K, V>
 for FibHeap<K, V> {
+    type HeapEntry = FibNode<K, V>;
+
     // This will essentially zero out the given value's key.
     // It is undefined behaviour if there is another zero value in the Heap.
-    fn delete(&mut self, value: V) -> (K, V) {
+    // TODO: Fix this and do it better
+    fn delete(&mut self, node: FibNode<K, V>) -> (K, V) {
         {
-            let node = self.hash_table[value].clone();
-            let key = node.borrow().get_key().clone();
-            self.decrease_key(value, key);
+            let key = node.get_key().clone();
+            self.decrease_key(&node, key);
         }
         self.delete_min()
     }
 }
 
-impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone> FibHeap<K, V> {
+impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clone> FibHeap<K, V> {
     pub fn new() -> FibHeap<K,V> {
-        FibHeap { hash_table: HashMap::new(), roots: DList::new(), total: 0 }
+        FibHeap { roots: VecDeque::new(), total: 0 }
     }
 
-    fn decreased_node(&mut self, node: FibEntryType<K, V>) {
+    fn decreased_node(&mut self, node: FibNode<K, V>) {
         match node.get_parent() {
             Some(parent) => {
                 if node < parent {
@@ -114,7 +124,7 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
         }
     }
 
-    fn insert_root(&mut self, root: FibEntryType<K, V>) {
+    fn insert_root(&mut self, root: FibNode<K, V>) {
         if self.roots.len() == 0 || *self.roots.front().unwrap() < root {
             self.roots.push_back(root);
         } else {
@@ -124,24 +134,20 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
 
     // XXX: Should I be using a DList for this data structure?
     fn sort_roots(&mut self) {
-        if self.roots.len() == 0 {
-            return
-        }
-
-        let mut min_node = self.roots.pop_front().unwrap();
-        for _ in range(0, self.roots.len()) {
-            if *self.roots.front().unwrap() < min_node {
-                self.roots.push_back(min_node);
-                min_node = self.roots.pop_front().unwrap();
-                // Put the recently added node at front so that it will properly rotate backward.
-                self.roots.rotate_forward();
+        let mut idx = 0;
+        {
+            let mut min = self.roots.get(0).unwrap();
+            for (i, r) in self.roots.iter().enumerate() {
+                if r < min {
+                    min = r;
+                    idx = i;
+                }
             }
-            self.roots.rotate_backward()
-       }
-       self.roots.push_front(min_node);
+        }
+        self.roots.swap(0, idx);
     }
 
-    fn cut(&self, parent: FibEntryType<K, V>, child: FibEntryType<K, V>) -> FibEntryType<K, V> {
+    fn cut(&self, parent: FibNode<K, V>, mut child: FibNode<K, V>) -> FibNode<K, V> {
         let res = parent.remove_child(child.clone());
         assert!(res.is_ok());
         child.set_parent(None);
@@ -149,7 +155,7 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
         child
     }
 
-    fn cascading_cut(&mut self, node: FibEntryType<K, V>) {
+    fn cascading_cut(&mut self, mut node: FibNode<K, V>) {
         match node.get_parent() {
             Some(parent) => {
                 if node.get_marked() {
@@ -168,8 +174,9 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
 
     fn consolidate(&mut self) {
         // The maximum rank of a FibHeap is O(log n).
-        let log_n = (self.total as f64).log2() as uint + 1;
-        let mut rank_vec = Vec::from_fn(log_n, |_| -> Option<FibEntryType<K,V>> { None });
+        let log_n = (self.total as f64).log2() as u64 + 1;
+        let mut rank_vec = vec!(None);
+        rank_vec.resize(log_n as usize, None);
         loop {
             match self.roots.pop_front() {
                 Some(node) => {
@@ -185,8 +192,8 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
         }
     }
 
-    fn link_and_insert(&self, rank_vec: &mut Vec<Option<FibEntryType<K,V>>>,
-                       root: FibEntryType<K,V>, child: FibEntryType<K,V>) {
+    fn link_and_insert(&self, rank_vec: &mut Vec<Option<FibNode<K, V>>>,
+                       root: FibNode<K, V>, mut child: FibNode<K, V>) {
         // We are only linking FibHeap roots, so they don't have parents.
         child.set_parent(Some(root.clone()));
         child.set_marked(false);
@@ -195,8 +202,8 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
         self.insert_by_rank(rank_vec, root);
     }
 
-    fn insert_by_rank(&self, rank_vec: &mut Vec<Option<FibEntryType<K,V>>>,
-                      node: FibEntryType<K,V>) {
+    fn insert_by_rank(&self, rank_vec: &mut Vec<Option<FibNode<K, V>>>,
+                      node: FibNode<K, V>) {
         let rank = node.rank();
         if rank_vec[rank].is_none() {
             rank_vec[rank] = Some(node);
@@ -204,7 +211,7 @@ impl<K: Ord + Show + Clone + Sub<K,K>, V: Eq + PartialOrd + Show + Hash + Clone>
         }
 
         rank_vec.push(None);
-        let other = rank_vec.swap_remove(rank).unwrap().unwrap();
+        let other = rank_vec.swap_remove(rank).unwrap();
 
         if node < other {
             self.link_and_insert(rank_vec, node, other);
@@ -219,17 +226,15 @@ mod tests {
     use test::Bencher;
     use {Heap, HeapExt, HeapDelete};
     use fibonacci_heap::{FibHeap};
-    use fib_node::{FibEntry};
+    use fib_node::{FibNode};
 
     #[test]
     fn fheap_insert() {
         let mut fheap: FibHeap<u8, u8> = FibHeap::new();
-        fheap.insert(1, 1);
-        fheap.insert(2, 2);
-        let one = fheap.hash_table.get(&1).clone().expect("Value 1 not found");
-        let two = fheap.hash_table.get(&2).clone().expect("Value 2 not found");
-        assert_eq!(one.borrow().get_key(), &1);
-        assert_eq!(two.borrow().get_key(), &2);
+        let one = fheap.insert(1, 1);
+        let two = fheap.insert(2, 2);
+        assert_eq!(one.get_key(), &1);
+        assert_eq!(two.get_key(), &2);
         assert_eq!(fheap.total, 2);
         assert_eq!(fheap.roots.len(), 2);
     }
@@ -253,10 +258,9 @@ mod tests {
         fheap1.insert(0, 0);
         fheap1.insert(3, 3);
 
-        fheap.merge(fheap1);
+        fheap = fheap.merge(fheap1);
         assert_eq!(fheap.total, 6);
         assert_eq!(fheap.roots.len(), 6);
-        assert_eq!(fheap.hash_table.len(), 6);
     }
 
     #[test]
@@ -283,17 +287,16 @@ mod tests {
     fn test_fheap_decrease_key() {
         let mut fheap: FibHeap<u8, u8> = FibHeap::new();
         fheap.insert(2, 2);
-        fheap.insert(4, 4);
-        let four = fheap.hash_table[4].clone();
+        let four = fheap.insert(4, 4);
         fheap.insert(0, 0);
-        fheap.insert(5, 5);
+        let five = fheap.insert(5, 5);
         fheap.delete_min();
         assert_eq!(fheap.roots.len(), 2);
-        fheap.decrease_key(4, 3);
-        assert_eq!(four.borrow().get_key(), &1);
+        fheap.decrease_key(&four.clone(), 3);
+        assert_eq!(four.clone().get_key(), &1);
         assert!(four.get_parent().is_none());
         assert_eq!(fheap.roots.len(), 3);
-        fheap.decrease_key(5, 5);
+        fheap.decrease_key(&five, 5);
         assert_eq!(fheap.roots.len(), 3);
         assert_eq!(fheap.find_min(), (0, 5));
     }
@@ -301,15 +304,24 @@ mod tests {
     #[test]
     fn test_fheap_decrease_key_adding_to_empty_root() {
         let mut fheap: FibHeap<u8, u8> = FibHeap::new();
-        fheap.insert(4, 4);
-        let four = fheap.hash_table[4].clone();
+        let four = fheap.insert(4, 4);
         fheap.insert(0, 0);
         fheap.delete_min();
         assert_eq!(fheap.roots.len(), 1);
-        fheap.decrease_key(4, 2);
-        assert_eq!(four.borrow().get_key(), &2);
+        fheap.decrease_key(&four, 2);
+        assert_eq!(four.get_key(), &2);
         assert!(four.get_parent().is_none());
     }
+
+    // #[test]
+    // fn test_fheap_decrease_key_decrease_root() {
+    //     let mut fheap: FibHeap<u8, u8> = FibHeap::new();
+    //     let four = fheap.insert(4, 4);
+    //     fheap.insert(1, 1);
+    //     fheap.decrease_key(four.clone(), 4);
+    //     assert_eq!(four.get_key(), &0);
+    //     assert_eq!(fheap.find_min(), (1, 1));
+    // }
 
     #[test]
     fn test_fheap_cascading_cut() {
@@ -320,8 +332,8 @@ mod tests {
         fheap.insert(5, 5);
         fheap.insert(2, 2);
         fheap.insert(3, 3);
-        fheap.insert(6, 6);
-        fheap.insert(7, 7);
+        let six = fheap.insert(6, 6);
+        let seven = fheap.insert(7, 7);
         fheap.insert(18, 18);
         fheap.insert(9, 9);
         fheap.insert(11, 11);
@@ -329,23 +341,23 @@ mod tests {
         fheap.delete_min();
         assert_eq!(fheap.find_min(), (1, 1));
         assert_eq!(fheap.roots.len(), 3);
-        fheap.decrease_key(6, 4);
+        fheap.decrease_key(&six, 4);
         assert_eq!(fheap.roots.len(), 4);
-        fheap.decrease_key(7, 7);
+        fheap.decrease_key(&seven, 7);
         assert_eq!(fheap.roots.len(), 6);
     }
 
     #[test]
     fn test_fheap_delete() {
         let mut fheap: FibHeap<u8, u8> = FibHeap::new();
-        fheap.insert(1, 1);
+        let one = fheap.insert(1, 1);
         fheap.insert(4, 4);
         fheap.insert(0, 0);
-        fheap.insert(5, 5);
+        let five = fheap.insert(5, 5);
         fheap.delete_min();
-        fheap.delete(5);
+        fheap.delete(five);
         assert_eq!(fheap.roots.len(), 1);
-        fheap.delete(1);
+        fheap.delete(one);
         assert_eq!(fheap.roots.len(), 1);
         assert_eq!(fheap.find_min(), (4, 4))
     }
@@ -355,7 +367,6 @@ mod tests {
         b.iter(|| {
             let fheap: FibHeap<u8, u8> = FibHeap::new();
             assert_eq!(fheap.roots.len(), 0);
-            assert_eq!(fheap.hash_table.len(), 0);
             assert!(fheap.empty());
         });
     }
@@ -381,12 +392,13 @@ mod tests {
         fheap.insert(6, 6);
         fheap.insert(3, 3);
         fheap.insert(11, 11);
-        let fheap1: FibHeap<u8, u8> = FibHeap::new();
-        fheap.insert(7, 7);
-        fheap.insert(10, 10);
+        let mut fheap1: FibHeap<u8, u8> = FibHeap::new();
+        fheap1.insert(7, 7);
+        fheap1.insert(10, 10);
 
-        b.iter(|| {
-            fheap.merge(fheap1.clone());
+        // TODO: How to do this better?
+        b.iter(move || {
+            fheap.clone().merge(fheap1.clone());
         });
     }
 
@@ -424,7 +436,7 @@ mod tests {
         fheap.insert(2, 2);
         fheap.insert(6, 6);
         fheap.insert(3, 3);
-        fheap.insert(10, 10);
+        let ten = fheap.insert(10, 10);
         fheap.insert(11, 11);
         fheap.insert(13, 13);
         fheap.insert(14, 14);
@@ -435,8 +447,7 @@ mod tests {
         fheap.insert(10, 10);
 
         b.iter(|| {
-            fheap.decrease_key(10, 9);
-            fheap.merge(fheap1.clone());
+            fheap.decrease_key(&ten, 1);
         });
     }
 }

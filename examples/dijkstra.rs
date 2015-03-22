@@ -11,34 +11,27 @@
 extern crate rust_heaps;
 use rust_heaps::fibonacci_heap::FibHeap;
 use rust_heaps::{Heap};
+use std::usize;
 use std::fmt;
-use std::uint;
 use std::rc::Rc;
+use std::cmp::Ordering;
 use std::cell::{RefCell};
-use std::hash::Hash;
-use std::hash::sip::SipState;
+use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
-static INFINITY: u64 = uint::MAX as u64;
+static INFINITY: u64 = usize::MAX as u64;
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Debug)]
 struct Node {
     id: u64,
-    edges: Vec<Edge>, // A node only holds edges were it is the source.
+    edges: Vec<Edge>, // A node only holds edges where it is the source.
     previous: Option<Rc<RefCell<Node>>>,
     distance: u64,
     visited: bool,
 }
 
-impl fmt::Show for RefCell<Node> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "Node ( "));
-        try!(write!(f, "id: {}, ", self.borrow().id));
-        write!(f, "distance: {} )", self.borrow().distance)
-    }
-}
-
 impl Hash for RefCell<Node> {
-    fn hash(&self, state: &mut SipState) {
+    fn hash<H>(&self, state: &mut H)  where H: Hasher {
         self.borrow().id.hash(state);
     }
 }
@@ -56,20 +49,32 @@ impl PartialOrd for RefCell<Node> {
     }
 }
 
-#[deriving(Show, Clone)]
+#[derive(Debug, Clone)]
 struct Edge {
     source: Rc<RefCell<Node>>,
     target: Rc<RefCell<Node>>,
     cost: u64
 }
 
+// impl fmt::Debug for Edge {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         f.debug_struct("Edge")
+//             .field("source", &self.source.borrow().id)
+//             .field("target", &self.target.borrow().id)
+//             .field("cost", &self.cost)
+//             .finish()
+//     }
+// }
+
 fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
-                 graph: Vec<Rc<RefCell<Node>>>,
-                 start: Rc<RefCell<Node>>,
-                 stop: Rc<RefCell<Node>>) -> Vec<Rc<RefCell<Node>>> {
+                                                  graph: Vec<Rc<RefCell<Node>>>,
+                                                  start: Rc<RefCell<Node>>,
+                                                  stop: Rc<RefCell<Node>>) -> Vec<Rc<RefCell<Node>>> {
+    let mut node_map = HashMap::new();
     start.borrow_mut().distance = 0;
     for n in graph.into_iter() {
-        pq.insert(n.borrow().distance, n);
+        let node = pq.insert(n.borrow().distance, n.clone());
+        node_map.insert(n, node);
     }
 
     while !pq.empty() {
@@ -80,7 +85,7 @@ fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
         node.borrow_mut().visited = true;
         for e in node.borrow().edges.iter() {
             if !e.target.borrow().visited {
-               let new_dist = distance + e.cost;
+                let new_dist = distance + e.cost;
                 if new_dist < e.target.borrow().distance {
                     let old_dist = e.target.borrow().distance;
                     {
@@ -88,7 +93,8 @@ fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
                         let mut target = e.target.borrow_mut();
                         target.previous = Some(node.clone());
                     }
-                    pq.decrease_key(e.target.clone(), old_dist - new_dist);
+                    let fibnode = node_map.get(&e.target).unwrap();
+                    pq.decrease_key(fibnode, old_dist - new_dist);
                 }
             }
         }
@@ -150,12 +156,12 @@ fn main() {
     n2.borrow_mut().edges.push(Edge {
         source: n2.clone(),
         target: n3.clone(),
-        cost: 3
+        cost: 8
     });
     n2.borrow_mut().edges.push(Edge {
         source: n2.clone(),
         target: n4.clone(),
-        cost: 8
+        cost: 3
     });
     n3.borrow_mut().edges.push(Edge {
         source: n3.clone(),
@@ -172,5 +178,8 @@ fn main() {
     let graph = vec!(n1, n2, n3, n4);
     let mut heap = FibHeap::new();
     let shortest = shortest_path(&mut heap, graph, n1c, n4c);
-    println!("Path: {}", shortest);
+    // Shortest path is 1 -> 2 -> 4
+    for n in shortest.iter() {
+        println!("Node: {:?}", n.borrow().id);
+    }
 }

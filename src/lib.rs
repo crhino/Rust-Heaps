@@ -8,17 +8,21 @@ mod fib_node;
 pub mod fibonacci_heap;
 
 pub trait Heap<K, V> {
+    type HeapEntry;
+
     fn find_min(&self) -> (K, V);
     fn delete_min(&mut self) -> (K, V);
-    fn insert(&mut self, key: K, value: V);
-    fn decrease_key(&mut self, value: V, delta: K);
+    fn insert(&mut self, key: K, value: V) -> Self::HeapEntry;
+    fn decrease_key(&mut self, entry: &Self::HeapEntry, delta: K);
     fn empty(&self) -> bool;
 }
 
-pub trait HeapExt<K, V> {
-    fn merge(&mut self, other: Self);
+pub trait HeapExt {
+    fn merge(mut self, mut other: Self) -> Self;
 }
 
 pub trait HeapDelete<K, V> {
-    fn delete(&mut self, value: V) -> (K, V);
+    type HeapEntry;
+
+    fn delete(&mut self, entry: Self::HeapEntry) -> (K, V);
 }
