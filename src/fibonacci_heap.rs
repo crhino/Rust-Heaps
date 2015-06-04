@@ -1,5 +1,4 @@
 use std::ops::Sub;
-use std::num::Float;
 use std::fmt::Debug;
 use std::collections::VecDeque;
 use std::hash::Hash;

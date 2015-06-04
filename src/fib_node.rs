@@ -6,7 +6,7 @@ use std::collections::vec_deque::Drain;
 
 #[derive(Clone, Debug)]
 pub struct FibNode<K, V> {
-    inner: *mut _FibNode<K, V>,
+    inner: *mut Inner<K, V>,
 }
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for FibNode<K, V> {
@@ -30,7 +30,7 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for F
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for FibNode<K, V> {}
 
 #[derive(Clone, Debug)]
-pub struct _FibNode<K,V> {
+pub struct Inner<K,V> {
     parent: Option<FibNode<K, V>>,
     children: VecDeque<FibNode<K, V>>,
     // Rank is the length of children
@@ -39,29 +39,29 @@ pub struct _FibNode<K,V> {
     value: V,
 }
 
-impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for _FibNode<K, V> {
-    fn cmp(&self, other: &_FibNode<K, V>) -> Ordering {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for Inner<K, V> {
+    fn cmp(&self, other: &Inner<K, V>) -> Ordering {
         self.key.cmp(&other.key)
     }
 }
 
-impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialOrd for _FibNode<K, V> {
-    fn partial_cmp(&self, other: &_FibNode<K, V>) -> Option<Ordering> {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialOrd for Inner<K, V> {
+    fn partial_cmp(&self, other: &Inner<K, V>) -> Option<Ordering> {
         self.key.partial_cmp(&other.key)
     }
 }
 
-impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for _FibNode<K, V> {
-    fn eq(&self, other: &_FibNode<K, V>) -> bool {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for Inner<K, V> {
+    fn eq(&self, other: &Inner<K, V>) -> bool {
         self.key.eq(&other.key)
     }
 }
 
-impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for _FibNode<K, V> {}
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for Inner<K, V> {}
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> FibNode<K,V> {
     pub fn new(key: K, value: V) -> FibNode<K,V> {
-        let node = _FibNode {
+        let node = Inner {
             parent: None,
             children: VecDeque::new(),
             marked: false,
@@ -72,11 +72,11 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> FibNode<K,V> {
         FibNode { inner: inner }
     }
 
-    pub fn from_mut_ptr(ptr: *mut _FibNode<K, V>) -> FibNode<K, V> {
+    pub fn from_mut_ptr(ptr: *mut Inner<K, V>) -> FibNode<K, V> {
         FibNode { inner: ptr }
     }
 
-    pub fn get_mut_ptr(&self) -> *mut _FibNode<K, V> {
+    pub fn get_mut_ptr(&self) -> *mut Inner<K, V> {
         self.inner.clone()
     }
 
@@ -138,9 +138,9 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> FibNode<K,V> {
     }
 }
 
-impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> _FibNode<K,V> {
-    pub fn new(key: K, value: V) -> _FibNode<K,V> {
-        _FibNode {
+impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Inner<K,V> {
+    pub fn new(key: K, value: V) -> Inner<K,V> {
+        Inner {
             parent: None,
             children: VecDeque::new(),
             marked: false,

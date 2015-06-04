@@ -14,7 +14,7 @@ use rust_heaps::{Heap};
 use std::usize;
 use std::rc::Rc;
 use std::cmp::Ordering;
-use std::cell::{RefCell};
+use std::cell::{RefMut, Ref, RefCell};
 use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
@@ -22,36 +22,62 @@ static INFINITY: u64 = usize::MAX as u64;
 
 #[derive(Clone, Debug)]
 struct Node {
+    inner: RefCell<InnerNode>,
+}
+
+#[derive(Clone, Debug)]
+struct InnerNode {
     id: u64,
     edges: Vec<Edge>, // A node only holds edges where it is the source.
-    previous: Option<Rc<RefCell<Node>>>,
+    previous: Option<Rc<Node>>,
     distance: u64,
     visited: bool,
 }
 
-impl Hash for RefCell<Node> {
+impl Node {
+    pub fn new(id: u64) -> Rc<Node> {
+        let inner = RefCell::new(InnerNode {
+            id: id,
+            edges: Vec::new(),
+            previous: None,
+            distance: INFINITY,
+            visited: false
+        });
+        Rc::new(Node { inner: inner })
+    }
+
+    pub fn borrow_mut<'a>(&'a self) -> RefMut<'a, InnerNode> {
+        self.inner.borrow_mut()
+    }
+
+    pub fn borrow<'a>(&'a self) -> Ref<'a, InnerNode> {
+        self.inner.borrow()
+    }
+}
+
+impl Hash for Node {
     fn hash<H>(&self, state: &mut H)  where H: Hasher {
-        self.borrow().id.hash(state);
+        self.inner.borrow().id.hash(state);
     }
 }
-impl Eq for RefCell<Node> {}
+impl Eq for Node {}
 
-impl PartialEq for RefCell<Node> {
-    fn eq(&self, other: &RefCell<Node>) -> bool {
-        self.borrow().id == other.borrow().id
+impl PartialEq for Node {
+    fn eq(&self, other: &Node) -> bool {
+        self.inner.borrow().id == other.inner.borrow().id
     }
 }
 
-impl PartialOrd for RefCell<Node> {
-    fn partial_cmp(&self, other: &RefCell<Node>) -> Option<Ordering> {
-        self.borrow().id.partial_cmp(&other.borrow().id)
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Node) -> Option<Ordering> {
+        self.inner.borrow().id.partial_cmp(&other.inner.borrow().id)
     }
 }
 
 #[derive(Debug, Clone)]
 struct Edge {
-    source: Rc<RefCell<Node>>,
-    target: Rc<RefCell<Node>>,
+    source: Rc<Node>,
+    target: Rc<Node>,
     cost: u64
 }
 
@@ -65,10 +91,10 @@ struct Edge {
 //     }
 // }
 
-fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
-                                                  graph: Vec<Rc<RefCell<Node>>>,
-                                                  start: Rc<RefCell<Node>>,
-                                                  stop: Rc<RefCell<Node>>) -> Vec<Rc<RefCell<Node>>> {
+fn shortest_path<H: Heap<u64, Rc<Node>>>(pq: &mut H,
+                                                  graph: Vec<Rc<Node>>,
+                                                  start: Rc<Node>,
+                                                  stop: Rc<Node>) -> Vec<Rc<Node>> {
     let mut node_map = HashMap::new();
     start.borrow_mut().distance = 0;
     for n in graph.into_iter() {
@@ -104,7 +130,7 @@ fn shortest_path<H: Heap<u64, Rc<RefCell<Node>>>>(pq: &mut H,
     path
 }
 
-fn construct_path(path: &mut Vec<Rc<RefCell<Node>>>, node: Rc<RefCell<Node>>) {
+fn construct_path(path: &mut Vec<Rc<Node>>, node: Rc<Node>) {
     if node.borrow().distance == 0 {
         path.push(node.clone());
         return
@@ -114,34 +140,10 @@ fn construct_path(path: &mut Vec<Rc<RefCell<Node>>>, node: Rc<RefCell<Node>>) {
 }
 
 fn main() {
-    let n1 = Rc::new(RefCell::new(Node {
-        id: 1,
-        edges: Vec::new(),
-        previous: None,
-        distance: INFINITY,
-        visited: false
-    }));
-    let n2 = Rc::new(RefCell::new(Node {
-        id: 2,
-        edges: Vec::new(),
-        previous: None,
-        distance: INFINITY,
-        visited: false
-    }));
-    let n3 = Rc::new(RefCell::new(Node {
-        id: 3,
-        edges: Vec::new(),
-        previous: None,
-        distance: INFINITY,
-        visited: false
-    }));
-    let n4 = Rc::new(RefCell::new(Node {
-        id: 4,
-        edges: Vec::new(),
-        previous: None,
-        distance: INFINITY,
-        visited: false
-    }));
+    let n1 = Node::new(1);
+    let n2 = Node::new(2);
+    let n3 = Node::new(3);
+    let n4 = Node::new(4);
     n1.borrow_mut().edges.push(Edge {
         source: n1.clone(),
         target: n2.clone(),

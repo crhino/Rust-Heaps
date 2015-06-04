@@ -1,6 +1,9 @@
 #![crate_name = "rust_heaps"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+
+#![feature(test)]
+#![feature(collections)]
 #[cfg(test)]
 extern crate test;
 
