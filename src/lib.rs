@@ -2,8 +2,10 @@
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 
-#![feature(test)]
+#![feature(alloc)]
 #![feature(collections)]
+
+#![feature(test)]
 #[cfg(test)]
 extern crate test;
 

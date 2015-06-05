@@ -1,6 +1,7 @@
 use std::ops::Sub;
 use std::fmt::Debug;
-use std::collections::VecDeque;
+use std::collections::LinkedList;
+use std::rc::{Rc, Weak};
 use std::hash::Hash;
 use fib_node::{FibNode};
 use {Heap, HeapExt, HeapDelete};
@@ -8,14 +9,14 @@ use {Heap, HeapExt, HeapDelete};
 #[derive(Clone)]
 pub struct FibHeap<K,V> {
     // The minimum element is always contained at the top of the first root.
-    roots: VecDeque<FibNode<K, V>>,
+    roots: LinkedList<Rc<FibNode<K, V>>>,
     total: u32
 }
 
 impl<K: Ord + Debug + Clone + Sub<K, Output=K>,
 V: Eq + PartialOrd + Debug + Clone> Heap<K, V>
 for FibHeap<K, V> {
-    type HeapEntry = FibNode<K, V>;
+    type HeapEntry = Rc<FibNode<K, V>>;
 
     fn find_min(&self) -> (K, V) {
         match self.roots.front() {
@@ -26,7 +27,7 @@ for FibHeap<K, V> {
         }
     }
 
-    fn insert(&mut self, k: K, v: V) -> FibNode<K, V> {
+    fn insert(&mut self, k: K, v: V) -> Rc<FibNode<K, V>> {
         let node = FibNode::new(k, v);
         let ret = node.clone();
         self.total += 1;
@@ -37,8 +38,8 @@ for FibHeap<K, V> {
     fn delete_min(&mut self) -> (K, V) {
         match self.roots.pop_front() {
             None => panic!("Fibonacci heap is empty"),
-            Some(mut min_entry) => {
-                for mut c in min_entry.children_drain() {
+            Some(min_entry) => {
+                for c in min_entry.drain_children() {
                     c.set_parent(None);
                     self.insert_root(c);
                 }
@@ -51,9 +52,9 @@ for FibHeap<K, V> {
         }
     }
 
-    fn decrease_key(&mut self, node: &FibNode<K, V>, delta: K) {
+    fn decrease_key(&mut self, node: &Rc<FibNode<K, V>>, delta: K) {
         // TODO: Figure out how to do this better.
-        let mut new_node = FibNode::from_mut_ptr(node.get_mut_ptr());
+        let new_node = node.clone();
         let key = new_node.get_key().clone();
         let new_key: K = key - delta;
         new_node.set_key(new_key);
@@ -67,7 +68,6 @@ for FibHeap<K, V> {
 
 impl<K: Ord + Debug + Clone + Sub<K, Output=K>,
 V: Eq + PartialOrd + Debug + Hash + Clone> HeapExt for FibHeap<K, V> {
-    // TODO: Make this operation O(1), I don't think VecDeque offers the ability to append O(1).
     fn merge(mut self, mut other: FibHeap<K,V>) -> FibHeap<K, V> {
         let (smin, _) = self.find_min();
         let (omin, _) = other.find_min();
@@ -87,12 +87,12 @@ V: Eq + PartialOrd + Debug + Hash + Clone> HeapExt for FibHeap<K, V> {
 impl<K: Ord + Debug +Clone + Sub<K, Output=K>,
 V: Eq + PartialOrd + Debug + Hash + Clone> HeapDelete<K, V>
 for FibHeap<K, V> {
-    type HeapEntry = FibNode<K, V>;
+    type HeapEntry = Rc<FibNode<K, V>>;
 
     // This will essentially zero out the given value's key.
     // It is undefined behaviour if there is another zero value in the Heap.
     // TODO: Fix this and do it better
-    fn delete(&mut self, node: FibNode<K, V>) -> (K, V) {
+    fn delete(&mut self, node: Rc<FibNode<K, V>>) -> (K, V) {
         {
             let key = node.get_key().clone();
             self.decrease_key(&node, key);
@@ -103,13 +103,14 @@ for FibHeap<K, V> {
 
 impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clone> FibHeap<K, V> {
     pub fn new() -> FibHeap<K,V> {
-        FibHeap { roots: VecDeque::new(), total: 0 }
+        FibHeap { roots: LinkedList::new(), total: 0 }
     }
 
-    fn decreased_node(&mut self, node: FibNode<K, V>) {
+    fn decreased_node(&mut self, node: Rc<FibNode<K, V>>) {
         match node.get_parent() {
             Some(parent) => {
-                if node < parent {
+                let p = parent.clone().upgrade().expect("Parent has already been destroyed");
+                if node < p {
                     let root = self.cut(parent.clone(), node);
                     self.insert_root(root);
                     self.cascading_cut(parent);
@@ -122,7 +123,7 @@ impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clo
         }
     }
 
-    fn insert_root(&mut self, root: FibNode<K, V>) {
+    fn insert_root(&mut self, root: Rc<FibNode<K, V>>) {
         if self.roots.len() == 0 || *self.roots.front().unwrap() < root {
             self.roots.push_back(root);
         } else {
@@ -130,22 +131,34 @@ impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clo
         }
     }
 
-    // XXX: Should I be using a DList for this data structure?
+    // TODO: This is horrible and inefficient.
     fn sort_roots(&mut self) {
-        let mut idx = 0;
-        {
-            let mut min = self.roots.get(0).unwrap();
-            for (i, r) in self.roots.iter().enumerate() {
-                if r < min {
-                    min = r;
-                    idx = i;
+        let len = self.roots.len();
+        for _i in (0..len) {
+            let mut less = false;
+            {
+                let min = self.roots.front().expect("Could not find front");
+                let other = self.roots.back().expect("Could not find front");
+
+                if other <= min {
+                    less = true;
                 }
             }
+
+            if less {
+                let m = self.roots.pop_back().unwrap();
+                self.roots.push_front(m);
+            } else {
+                let b = self.roots.pop_back().unwrap();
+                let f = self.roots.pop_front().unwrap();
+                self.roots.push_front(b);
+                self.roots.push_front(f);
+            }
         }
-        self.roots.swap(0, idx);
     }
 
-    fn cut(&self, parent: FibNode<K, V>, mut child: FibNode<K, V>) -> FibNode<K, V> {
+    fn cut(&self, p: Weak<FibNode<K, V>>, child: Rc<FibNode<K, V>>) -> Rc<FibNode<K, V>> {
+        let parent = p.upgrade().expect("Parent was already destroyed");
         let res = parent.remove_child(child.clone());
         assert!(res.is_ok());
         child.set_parent(None);
@@ -153,7 +166,8 @@ impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clo
         child
     }
 
-    fn cascading_cut(&mut self, mut node: FibNode<K, V>) {
+    fn cascading_cut(&mut self, n: Weak<FibNode<K, V>>) {
+        let node = n.upgrade().expect("Node was already destroyed");
         match node.get_parent() {
             Some(parent) => {
                 if node.get_marked() {
@@ -190,18 +204,18 @@ impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clo
         }
     }
 
-    fn link_and_insert(&self, rank_vec: &mut Vec<Option<FibNode<K, V>>>,
-                       root: FibNode<K, V>, mut child: FibNode<K, V>) {
+    fn link_and_insert(&self, rank_vec: &mut Vec<Option<Rc<FibNode<K, V>>>>,
+                       root: Rc<FibNode<K, V>>, child: Rc<FibNode<K, V>>) {
         // We are only linking FibHeap roots, so they don't have parents.
-        child.set_parent(Some(root.clone()));
+        child.set_parent(Some(root.clone().downgrade()));
         child.set_marked(false);
 
         root.add_child(child);
         self.insert_by_rank(rank_vec, root);
     }
 
-    fn insert_by_rank(&self, rank_vec: &mut Vec<Option<FibNode<K, V>>>,
-                      node: FibNode<K, V>) {
+    fn insert_by_rank(&self, rank_vec: &mut Vec<Option<Rc<FibNode<K, V>>>>,
+                      node: Rc<FibNode<K, V>>) {
         let rank = node.rank();
         if rank_vec[rank].is_none() {
             rank_vec[rank] = Some(node);
@@ -309,16 +323,6 @@ mod tests {
         assert_eq!(four.get_key(), &2);
         assert!(four.get_parent().is_none());
     }
-
-    // #[test]
-    // fn test_fheap_decrease_key_decrease_root() {
-    //     let mut fheap: FibHeap<u8, u8> = FibHeap::new();
-    //     let four = fheap.insert(4, 4);
-    //     fheap.insert(1, 1);
-    //     fheap.decrease_key(four.clone(), 4);
-    //     assert_eq!(four.get_key(), &0);
-    //     assert_eq!(fheap.find_min(), (1, 1));
-    // }
 
     #[test]
     fn test_fheap_cascading_cut() {

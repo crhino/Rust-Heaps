@@ -1,38 +1,38 @@
 use std::fmt::{Debug};
 use std::cmp::Ordering;
-use std::mem;
+use std::rc::{Rc, Weak};
+use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::collections::vec_deque::Drain;
 
-#[derive(Clone, Debug)]
 pub struct FibNode<K, V> {
-    inner: *mut Inner<K, V>,
+    inner: UnsafeCell<Inner<K, V>>,
 }
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Ord for FibNode<K, V> {
     fn cmp(&self, other: &FibNode<K, V>) -> Ordering {
-        unsafe { (*(self.inner)).cmp(&*other.inner) }
+        unsafe { (*(self.inner.get())).cmp(&*other.inner.get()) }
     }
 }
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialOrd for FibNode<K, V> {
     fn partial_cmp(&self, other: &FibNode<K, V>) -> Option<Ordering> {
-        unsafe { (*(self.inner)).partial_cmp(&*other.inner) }
+        unsafe { (*(self.inner.get())).partial_cmp(&*other.inner.get()) }
     }
 }
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for FibNode<K, V> {
     fn eq(&self, other: &FibNode<K, V>) -> bool {
-        unsafe { (*(self.inner)).eq(&*other.inner) }
+        unsafe { (*(self.inner.get())).eq(&*other.inner.get()) }
     }
 }
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for FibNode<K, V> {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Inner<K,V> {
-    parent: Option<FibNode<K, V>>,
-    children: VecDeque<FibNode<K, V>>,
+    parent: Option<Weak<FibNode<K, V>>>,
+    children: VecDeque<Rc<FibNode<K, V>>>,
     // Rank is the length of children
     marked: bool,
     key: K,
@@ -60,81 +60,62 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> PartialEq for I
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Eq for Inner<K, V> {}
 
 impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> FibNode<K,V> {
-    pub fn new(key: K, value: V) -> FibNode<K,V> {
-        let node = Inner {
-            parent: None,
-            children: VecDeque::new(),
-            marked: false,
-            key: key,
-            value: value,
-        };
-        let inner = unsafe { mem::transmute(Box::new(node)) };
-        FibNode { inner: inner }
-    }
-
-    pub fn from_mut_ptr(ptr: *mut Inner<K, V>) -> FibNode<K, V> {
-        FibNode { inner: ptr }
-    }
-
-    pub fn get_mut_ptr(&self) -> *mut Inner<K, V> {
-        self.inner.clone()
+    pub fn new(key: K, value: V) -> Rc<FibNode<K,V>> {
+        let inner = UnsafeCell::new(Inner::new(key, value));
+        Rc::new(FibNode { inner: inner })
     }
 
     pub fn rank(&self) -> usize {
-        unsafe { (*self.inner).rank() }
+        unsafe { (*self.inner.get()).rank() }
     }
 
-    pub fn add_child(&self, child: FibNode<K,V>) {
-        unsafe { (*self.inner).add_child(child) }
+    pub fn add_child(&self, child: Rc<FibNode<K,V>>) {
+        unsafe { (*self.inner.get()).add_child(child) }
     }
 
-    pub fn remove_child(&self, child: FibNode<K,V>)
-        -> Result<FibNode<K,V>, String> {
-        unsafe { (*self.inner).remove_child(child) }
-        }
+    pub fn remove_child(&self, child: Rc<FibNode<K,V>>)
+        -> Result<Rc<FibNode<K,V>>, String> {
+        unsafe { (*self.inner.get()).remove_child(child) }
+    }
 
-    pub fn set_marked(&mut self, mark: bool) {
-        unsafe { (*self.inner).set_marked(mark) }
+    pub fn set_marked(&self, mark: bool) {
+        unsafe { (*self.inner.get()).set_marked(mark) }
     }
 
     pub fn get_marked(&self) -> bool {
-        unsafe { (*self.inner).get_marked() }
+        unsafe { (*self.inner.get()).get_marked() }
     }
 
-    pub fn set_key(&mut self, key: K) {
-        unsafe { (*self.inner).set_key(key) }
+    pub fn set_key(&self, key: K) {
+        unsafe { (*self.inner.get()).set_key(key) }
     }
 
-    pub fn set_parent(&mut self, parent: Option<FibNode<K,V>>) {
-        unsafe { (*self.inner).set_parent(parent) }
+    pub fn set_parent(&self, parent: Option<Weak<FibNode<K,V>>>) {
+        unsafe { (*self.inner.get()).set_parent(parent) }
     }
 
-    pub fn get_parent(&self) -> Option<FibNode<K,V>>{
-        unsafe { (*self.inner).get_parent() }
+    pub fn get_parent(&self) -> Option<Weak<FibNode<K,V>>>{
+        unsafe { (*self.inner.get()).get_parent() }
     }
 
-    pub fn root(&self) -> bool {
-        unsafe { (*self.inner).root() }
+    pub fn drain_children(&self) -> Drain<Rc<FibNode<K,V>>> {
+        unsafe { (*self.inner.get()).drain_children() }
     }
 
-    pub fn children_drain(&mut self) -> Drain<FibNode<K,V>> {
-        unsafe { (*self.inner).children_drain() }
-    }
-
-    // TODO: Fix this so it actually consumes everything
-    pub fn into_inner(self) -> (K, V) {
+    // Do this better, don't clone the thing.
+    pub fn into_inner(&self) -> (K, V) {
         unsafe {
-            let node = (*self.inner).clone();
-            node.into_inner()
+            let n = (*self.inner.get()).clone();
+            n.into_inner()
         }
     }
 
     pub fn get_value(&self) -> &V {
-        unsafe { (*self.inner).get_value() }
+        unsafe { (*self.inner.get()).get_value() }
     }
 
     pub fn get_key(&self) -> &K {
-        unsafe { (*self.inner).get_key() }
+        unsafe { (*self.inner.get()).get_key() }
     }
 }
 
@@ -153,13 +134,13 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Inner<K,V> {
         self.children.len()
     }
 
-    pub fn add_child(&mut self, child: FibNode<K,V>) {
+    pub fn add_child(&mut self, child: Rc<FibNode<K,V>>) {
         self.children.push_back(child);
     }
 
     // XXX: Better way to do this?
-    pub fn remove_child(&mut self, child: FibNode<K,V>)
-        -> Result<FibNode<K,V>, String> {
+    pub fn remove_child(&mut self, child: Rc<FibNode<K,V>>)
+        -> Result<Rc<FibNode<K,V>>, String> {
             for _ in (0..self.children.len()) {
                 if *self.children.front().unwrap() == child {
                     return Ok(self.children.pop_front().unwrap())
@@ -182,19 +163,15 @@ impl<K: Clone + Ord + Debug, V: Eq + Clone + PartialOrd + Debug> Inner<K,V> {
         self.key = key;
     }
 
-    pub fn set_parent(&mut self, parent: Option<FibNode<K,V>>) {
+    pub fn set_parent(&mut self, parent: Option<Weak<FibNode<K,V>>>) {
         self.parent = parent;
     }
 
-    pub fn get_parent(&self) -> Option<FibNode<K,V>>{
+    pub fn get_parent(&self) -> Option<Weak<FibNode<K,V>>>{
         self.parent.clone()
     }
 
-    pub fn root(&self) -> bool {
-        self.parent.is_none()
-    }
-
-    pub fn children_drain(&mut self) -> Drain<FibNode<K,V>> {
+    pub fn drain_children(&mut self) -> Drain<Rc<FibNode<K,V>>> {
         self.children.drain()
     }
 
@@ -219,7 +196,7 @@ mod test {
 
     #[test]
     fn node_test() {
-        let mut node = FibNode::new(0u8, 0u8);
+        let node = FibNode::new(0u8, 0u8);
         let child = FibNode::new(1u8, 1u8);
 
         assert_eq!(node.get_key(), &0u8);
@@ -235,16 +212,17 @@ mod test {
 
     #[test]
     fn parent_child_test() {
-        let mut node = FibNode::new(1u8, 1u8);
+        let node = FibNode::new(1u8, 1u8);
         let root = node.clone();
-        let mut child = FibNode::new(2u8, 2u8);
-        child.set_parent(Some(root.clone()));
+        let child = FibNode::new(2u8, 2u8);
+        child.set_parent(Some(root.clone().downgrade()));
 
         node.set_key(10u8);
         node.set_marked(true);
         let parent = child.get_parent().expect("Not a child");
+        let parent = parent.upgrade().expect("Destroyed");
 
-        assert_eq!(root, parent);
+        assert!(root == parent);
         assert_eq!(root.get_key(), &10u8);
         assert_eq!(parent.get_marked(), true);
         assert_eq!(child.get_key(), &2u8);
