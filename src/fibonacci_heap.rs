@@ -133,27 +133,9 @@ impl<K: Ord + Debug + Clone + Sub<K, Output=K>, V: Eq + PartialOrd + Debug + Clo
 
     // TODO: This is horrible and inefficient.
     fn sort_roots(&mut self) {
-        let len = self.roots.len();
-        for _i in (0..len) {
-            let mut less = false;
-            {
-                let min = self.roots.front().expect("Could not find front");
-                let other = self.roots.back().expect("Could not find front");
-
-                if other <= min {
-                    less = true;
-                }
-            }
-
-            if less {
-                let m = self.roots.pop_back().unwrap();
-                self.roots.push_front(m);
-            } else {
-                let b = self.roots.pop_back().unwrap();
-                let f = self.roots.pop_front().unwrap();
-                self.roots.push_front(b);
-                self.roots.push_front(f);
-            }
+        let r = self.roots.split_off(0);
+        for n in r.into_iter() {
+            self.insert_root(n);
         }
     }
 
